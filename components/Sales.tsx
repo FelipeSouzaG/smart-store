@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useContext } from 'react';
 import type { Product, SaleItem, TicketSale, Customer } from '../types';
 import { AuthContext } from '../contexts/AuthContext';
@@ -262,6 +261,7 @@ const Sales: React.FC<SalesProps> = ({ products, onAddSale }) => {
 
     const handleScan = (code: string) => {
         setIsScannerOpen(false);
+        setSearchTerm(code); // Set the code in the input immediately
         const product = products.find(p => p.barcode === code || p.id === code);
 
         if (product) {
@@ -483,3 +483,4 @@ const Sales: React.FC<SalesProps> = ({ products, onAddSale }) => {
 };
 
 export default Sales;
+
