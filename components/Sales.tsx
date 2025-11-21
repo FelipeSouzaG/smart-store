@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useContext } from 'react';
 import type { Product, SaleItem, TicketSale, Customer } from '../types';
 import { AuthContext } from '../contexts/AuthContext';
@@ -15,7 +16,14 @@ const ScannerModal: React.FC<{ onClose: () => void; onScan: (code: string) => vo
 
         const openCamera = async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                // Request ideal resolution to avoid massive 4k streams on mobile which slow down JS processing
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
                 streamRef.current = stream;
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
@@ -25,7 +33,7 @@ const ScannerModal: React.FC<{ onClose: () => void; onScan: (code: string) => vo
                 }
             } catch (err) {
                 console.error("Error accessing camera:", err);
-                alert("Não foi possível acessar a câmera. Verifique as permissões no seu navegador.");
+                alert("Não foi possível acessar a câmera. Verifique as permissões no seu navegador e se está acessando via HTTPS.");
                 onClose();
             }
         };
@@ -35,16 +43,29 @@ const ScannerModal: React.FC<{ onClose: () => void; onScan: (code: string) => vo
                 const canvas = canvasRef.current;
                 const video = videoRef.current;
                 if (canvas) {
-                    canvas.height = video.videoHeight;
-                    canvas.width = video.videoWidth;
-                    const ctx = canvas.getContext('2d');
+                    // Performance optimization: Scale down detecting image
+                    // Processing full resolution on mobile is too slow for jsQR
+                    const MAX_WIDTH = 640;
+                    const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
+                    const width = video.videoWidth * scale;
+                    const height = video.videoHeight * scale;
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    // 'willReadFrequently' optimizes for frequent getImageData calls
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
                     if (ctx) {
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(video, 0, 0, width, height);
+                        const imageData = ctx.getImageData(0, 0, width, height);
+                        
                         const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                            inversionAttempts: "dontInvert",
+                            inversionAttempts: "attemptBoth", // Try both normal and inverted codes
                         });
-                        if (code) {
+                        
+                        if (code && code.data) {
+                            // Success feedback
+                            if (navigator.vibrate) navigator.vibrate(200);
                             onScan(code.data);
                             return;
                         }
@@ -67,13 +88,21 @@ const ScannerModal: React.FC<{ onClose: () => void; onScan: (code: string) => vo
     return (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
             <div className="relative bg-white dark:bg-gray-800 p-4 rounded-lg shadow-xl max-w-lg w-full">
-                <p className="text-center text-white mb-2">Aponte a câmera para o código de barras</p>
-                <video ref={videoRef} className="w-full rounded" />
+                <p className="text-center text-gray-700 dark:text-gray-200 mb-2 font-medium">Aponte a câmera para o código de barras</p>
+                <div className="relative bg-black rounded overflow-hidden">
+                    <video ref={videoRef} className="w-full h-auto object-contain" />
+                    {/* Visual Guide Overlay */}
+                    <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
+                        <div className="w-3/4 h-1/3 border-2 border-red-500/80 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] pointer-events-none">
+                            {/* Scanning line animation */}
+                            <div className="w-full h-0.5 bg-red-500 animate-[pulse_2s_infinite] relative top-1/2 -translate-y-1/2"></div>
+                        </div>
+                    </div>
+                </div>
                 <canvas ref={canvasRef} className="hidden" />
-                <div className="absolute top-1/2 left-1/2 w-3/4 h-1/4 -translate-x-1/2 -translate-y-1/2 border-4 border-dashed border-green-500 rounded-lg" />
                 <button
                     onClick={onClose}
-                    className="mt-4 w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600"
+                    className="mt-4 w-full py-3 px-4 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors"
                 >
                     Cancelar
                 </button>
@@ -383,7 +412,7 @@ const Sales: React.FC<SalesProps> = ({ products, onAddSale }) => {
                                             autoComplete="off"
                                         />
                                         <button type="button" onClick={() => setIsScannerOpen(true)} className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-600 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-500">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM3 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" clipRule="evenodd" /></svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm10 0a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM3 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" clipRule="evenodd" /></svg>
                                         </button>
                                     </div>
                                      {searchResults.length > 0 && (
