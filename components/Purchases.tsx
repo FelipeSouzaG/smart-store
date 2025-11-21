@@ -4,101 +4,81 @@ import { Product, PurchaseOrder, PurchaseItem, PaymentMethod, Bank, Installment,
 import { AuthContext } from '../contexts/AuthContext';
 import { formatName, validateName, formatRegister, validateRegister, formatPhone, validatePhone, formatCurrencyNumber, formatMoney } from '../validation';
 
-declare const jsQR: any;
+// Declare ZXing attached to window via CDN
+declare global {
+    interface Window {
+        ZXing: any;
+    }
+}
 
 const ScannerModal: React.FC<{ onClose: () => void; onScan: (code: string) => void }> = ({ onClose, onScan }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
+    const [error, setError] = useState<string>('');
 
     useEffect(() => {
-        let animationFrameId: number;
-
-        const openCamera = async () => {
+        const codeReader = new window.ZXing.BrowserMultiFormatReader();
+        
+        const startScanning = async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 } 
-                    } 
-                });
-                streamRef.current = stream;
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    videoRef.current.setAttribute('playsinline', 'true');
-                    videoRef.current.play();
-                    animationFrameId = requestAnimationFrame(tick);
-                }
-            } catch (err) {
-                console.error("Error accessing camera:", err);
-                alert("Não foi possível acessar a câmera. Verifique as permissões no seu navegador.");
-                onClose();
-            }
-        };
-
-        const tick = () => {
-            if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-                const canvas = canvasRef.current;
-                const video = videoRef.current;
-                if (canvas) {
-                    // Performance optimization: Scale down detecting image
-                    const MAX_WIDTH = 640;
-                    const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
-                    const width = video.videoWidth * scale;
-                    const height = video.videoHeight * scale;
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    
-                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    if (ctx) {
-                        ctx.drawImage(video, 0, 0, width, height);
-                        const imageData = ctx.getImageData(0, 0, width, height);
-                        const code = jsQR(imageData.data, width, height, {
-                            inversionAttempts: "attemptBoth",
-                        });
-                        if (code && code.data) {
+                // Attempts to find the back camera (environment)
+                await codeReader.decodeFromVideoDevice(
+                    undefined, // deviceId: undefined lets the library choose, or use video input ID
+                    videoRef.current,
+                    (result: any, err: any) => {
+                        if (result) {
                             if (navigator.vibrate) navigator.vibrate(200);
-                            onScan(code.data);
-                            return;
+                            onScan(result.getText());
+                            codeReader.reset(); // Stop scanning once found
                         }
+                        // err is typically "NotFoundException" while scanning, which is normal
                     }
-                }
+                );
+            } catch (err) {
+                console.error("Error starting scanner:", err);
+                setError("Erro ao iniciar a câmera. Verifique as permissões.");
             }
-            animationFrameId = requestAnimationFrame(tick);
         };
 
-        openCamera();
+        startScanning();
 
         return () => {
-            cancelAnimationFrame(animationFrameId);
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
+            codeReader.reset();
         };
-    }, [onClose, onScan]);
+    }, [onScan]);
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-            <div className="relative bg-white dark:bg-gray-800 p-4 rounded-lg shadow-xl max-w-lg w-full">
-                <p className="text-center text-gray-700 dark:text-gray-200 mb-2 font-medium">Aponte a câmera para o código de barras</p>
-                <div className="relative bg-black rounded overflow-hidden">
-                    <video ref={videoRef} className="w-full h-auto object-contain" />
-                    {/* Visual Guide Overlay */}
-                    <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
-                        <div className="w-3/4 h-1/3 border-2 border-red-500/80 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] pointer-events-none">
-                            <div className="w-full h-0.5 bg-red-500 animate-[pulse_2s_infinite] relative top-1/2 -translate-y-1/2"></div>
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+            <div className="relative w-full max-w-lg p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+                    <div className="p-4 text-center">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Scanner de Código de Barras</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Aponte a câmera para o código do produto</p>
+                    </div>
+                    
+                    <div className="relative aspect-[4/3] bg-black">
+                        <video 
+                            ref={videoRef} 
+                            className="w-full h-full object-cover" 
+                            style={{ transform: 'scaleX(1)' }} // Prevent mirroring if back camera
+                        />
+                        {/* Scanning Line Animation */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-3/4 h-0.5 bg-red-500 animate-[pulse_2s_infinite] shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
                         </div>
+                        <div className="absolute inset-0 border-2 border-white/30 rounded-lg m-8 pointer-events-none"></div>
+                    </div>
+
+                    {error && <p className="text-center text-red-500 p-2 text-sm">{error}</p>}
+
+                    <div className="p-4">
+                        <button
+                            onClick={onClose}
+                            className="w-full py-3 px-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                        >
+                            Cancelar
+                        </button>
                     </div>
                 </div>
-                <canvas ref={canvasRef} className="hidden" />
-                <button
-                    onClick={onClose}
-                    className="mt-4 w-full py-3 px-4 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors"
-                >
-                    Cancelar
-                </button>
             </div>
         </div>
     );
@@ -329,11 +309,11 @@ const PurchaseModal: React.FC<PurchaseModalProps> = ({ products, purchaseToEdit,
 
     const handleScan = (code: string) => {
         setIsScannerOpen(false);
-        const product = products.find(p => p.id === code);
+        const product = products.find(p => p.barcode === code || p.id === code);
         if (product) {
             handleSelectProduct(product);
         } else {
-            setError(`Produto com código de barras "${code}" não encontrado.`);
+            setError(`Produto com código "${code}" não encontrado.`);
             setTimeout(() => setError(''), 3000);
         }
     };
@@ -711,7 +691,6 @@ const PurchaseModal: React.FC<PurchaseModalProps> = ({ products, purchaseToEdit,
     )
 };
 
-
 const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCancel: () => void }> = ({ message, onConfirm, onCancel }) => (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm">
@@ -719,12 +698,11 @@ const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCa
             <p className="mb-6">{message}</p>
             <div className="flex justify-end space-x-4">
                 <button onClick={onCancel} className="px-4 py-2 rounded-md bg-gray-300 dark:bg-gray-600 hover:bg-gray-400">Cancelar</button>
-                <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700">Confirmar Exclusão</button>
+                <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700">Confirmar</button>
             </div>
         </div>
     </div>
 );
-
 
 interface PurchasesProps {
     products: Product[];
