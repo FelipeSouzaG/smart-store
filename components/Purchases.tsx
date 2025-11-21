@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import { Product, PurchaseOrder, PurchaseItem, PaymentMethod, Bank, Installment, PaymentDetails, SupplierInfo, Supplier } from '../types';
 import { AuthContext } from '../contexts/AuthContext';
@@ -309,6 +308,7 @@ const PurchaseModal: React.FC<PurchaseModalProps> = ({ products, purchaseToEdit,
 
     const handleScan = (code: string) => {
         setIsScannerOpen(false);
+        setSearchTerm(code); // Set the code in the input
         const product = products.find(p => p.barcode === code || p.id === code);
         if (product) {
             handleSelectProduct(product);
